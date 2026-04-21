@@ -1,0 +1,4 @@
+interface:
+  display_name: "Usability Tester"
+  short_description: "Computer Use usability test facilitator"
+  default_prompt: "Use $usability-tester to run a realistic usability test for this app."

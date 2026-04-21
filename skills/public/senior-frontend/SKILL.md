@@ -19,6 +19,7 @@ Build and review production frontend code with practical architecture rules and 
 - Use `/references/react_patterns.md` for component and state architecture.
 - Use `/references/nextjs_optimization_guide.md` for App Router and SSR performance.
 - For performance-sensitive React/Next.js tasks, load `/references/vercel-react-best-practices/index.md`, then open only relevant files from `/references/vercel-react-best-practices/rules/`.
+- Treat the Vercel guide as the default React/Next.js performance reference when writing or reviewing components, pages, data fetching, bundle size, load time, hydration, or render behavior.
 
 3. Implement or review in priority order.
 - Resolve blocking correctness and accessibility issues first.
@@ -64,7 +65,7 @@ Prioritize categories in this order when optimizing React/Next.js performance:
 - Full upstream snapshot:
   - `/references/vercel-react-best-practices/full-guide.md`
 - Rule files:
-  - `/references/vercel-react-best-practices/rules/*.md`
+  - `/references/vercel-react-best-practices/rules/*.md` (64 rules across 8 categories)
 - Local implementation guides:
   - `/references/react_patterns.md`
   - `/references/nextjs_optimization_guide.md`

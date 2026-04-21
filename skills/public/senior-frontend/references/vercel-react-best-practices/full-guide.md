@@ -14,7 +14,7 @@ January 2026
 
 ## Abstract
 
-Comprehensive performance optimization guide for React and Next.js applications, designed for AI agents and LLMs. Contains 40+ rules across 8 categories, prioritized by impact from critical (eliminating waterfalls, reducing bundle size) to incremental (advanced patterns). Each rule includes detailed explanations, real-world examples comparing incorrect vs. correct implementations, and specific impact metrics to guide automated refactoring and code generation.
+Comprehensive performance optimization guide for React and Next.js applications, designed for AI agents and LLMs. Contains 64 rules across 8 categories, prioritized by impact from critical (eliminating waterfalls, reducing bundle size) to incremental (advanced patterns). Each rule includes detailed explanations, real-world examples comparing incorrect vs. correct implementations, and specific impact metrics to guide automated refactoring and code generation.
 
 ---
 
@@ -40,6 +40,7 @@ Comprehensive performance optimization guide for React and Next.js applications,
    - 3.5 [Parallel Data Fetching with Component Composition](#35-parallel-data-fetching-with-component-composition)
    - 3.6 [Per-Request Deduplication with React.cache()](#36-per-request-deduplication-with-reactcache)
    - 3.7 [Use after() for Non-Blocking Operations](#37-use-after-for-non-blocking-operations)
+   - 3.8 [Hoist Static I/O to Module Scope](#38-hoist-static-io-to-module-scope)
 4. [Client-Side Data Fetching](#4-client-side-data-fetching) — **MEDIUM-HIGH**
    - 4.1 [Deduplicate Global Event Listeners](#41-deduplicate-global-event-listeners)
    - 4.2 [Use Passive Event Listeners for Scrolling Performance](#42-use-passive-event-listeners-for-scrolling-performance)
@@ -58,6 +59,9 @@ Comprehensive performance optimization guide for React and Next.js applications,
    - 5.10 [Use Lazy State Initialization](#510-use-lazy-state-initialization)
    - 5.11 [Use Transitions for Non-Urgent Updates](#511-use-transitions-for-non-urgent-updates)
    - 5.12 [Use useRef for Transient Values](#512-use-useref-for-transient-values)
+   - 5.13 [Split Hooks with Independent Dependencies](#513-split-hooks-with-independent-dependencies)
+   - 5.14 [Use useDeferredValue for Expensive Renders](#514-use-usedeferredvalue-for-expensive-renders)
+   - 5.15 [Do Not Define Components Inside Components](#515-do-not-define-components-inside-components)
 6. [Rendering Performance](#6-rendering-performance) — **MEDIUM**
    - 6.1 [Animate SVG Wrapper Instead of SVG Element](#61-animate-svg-wrapper-instead-of-svg-element)
    - 6.2 [CSS content-visibility for Long Lists](#62-css-content-visibility-for-long-lists)
@@ -68,6 +72,8 @@ Comprehensive performance optimization guide for React and Next.js applications,
    - 6.7 [Use Activity Component for Show/Hide](#67-use-activity-component-for-showhide)
    - 6.8 [Use Explicit Conditional Rendering](#68-use-explicit-conditional-rendering)
    - 6.9 [Use useTransition Over Manual Loading States](#69-use-usetransition-over-manual-loading-states)
+   - 6.10 [Use Resource Hints for Critical Assets](#610-use-resource-hints-for-critical-assets)
+   - 6.11 [Use defer or async on Script Tags](#611-use-defer-or-async-on-script-tags)
 7. [JavaScript Performance](#7-javascript-performance) — **LOW-MEDIUM**
    - 7.1 [Avoid Layout Thrashing](#71-avoid-layout-thrashing)
    - 7.2 [Build Index Maps for Repeated Lookups](#72-build-index-maps-for-repeated-lookups)
@@ -81,6 +87,7 @@ Comprehensive performance optimization guide for React and Next.js applications,
    - 7.10 [Use Loop for Min/Max Instead of Sort](#710-use-loop-for-minmax-instead-of-sort)
    - 7.11 [Use Set/Map for O(1) Lookups](#711-use-setmap-for-o1-lookups)
    - 7.12 [Use toSorted() Instead of sort() for Immutability](#712-use-tosorted-instead-of-sort-for-immutability)
+   - 7.13 [Use flatMap to Map and Filter in One Pass](#713-use-flatmap-to-map-and-filter-in-one-pass)
 8. [Advanced Patterns](#8-advanced-patterns) — **LOW**
    - 8.1 [Initialize App Once, Not Per Mount](#81-initialize-app-once-not-per-mount)
    - 8.2 [Store Event Handlers in Refs](#82-store-event-handlers-in-refs)
@@ -1034,6 +1041,70 @@ The response is sent immediately while logging happens in the background.
 
 Reference: [https://nextjs.org/docs/app/api-reference/functions/after](https://nextjs.org/docs/app/api-reference/functions/after)
 
+### 3.8 Hoist Static I/O to Module Scope
+
+**Impact: MEDIUM-HIGH (avoids repeated static reads during server rendering)**
+
+Static I/O that does not depend on request data should be initialized at module scope, not inside Server Components, Server Actions, or route handlers. This avoids repeating file reads, font setup, logo loading, or static config parsing on every request.
+
+**Incorrect: reads the same static file per request**
+
+```tsx
+import { readFile } from 'node:fs/promises'
+
+export default async function Layout({ children }: { children: React.ReactNode }) {
+  const logoSvg = await readFile('public/logo.svg', 'utf8')
+
+  return (
+    <html>
+      <body>
+        <Header logoSvg={logoSvg} />
+        {children}
+      </body>
+    </html>
+  )
+}
+```
+
+**Correct: starts static I/O once per module instance**
+
+```tsx
+import { readFile } from 'node:fs/promises'
+
+const logoSvgPromise = readFile('public/logo.svg', 'utf8')
+
+export default async function Layout({ children }: { children: React.ReactNode }) {
+  const logoSvg = await logoSvgPromise
+
+  return (
+    <html>
+      <body>
+        <Header logoSvg={logoSvg} />
+        {children}
+      </body>
+    </html>
+  )
+}
+```
+
+**Correct for Next.js fonts**
+
+```tsx
+import { Inter } from 'next/font/google'
+
+const inter = Inter({ subsets: ['latin'] })
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html className={inter.className}>
+      <body>{children}</body>
+    </html>
+  )
+}
+```
+
+Only hoist request-independent work. Do not hoist values derived from `headers()`, `cookies()`, session state, authorization, locale, AB test buckets, or user-specific configuration.
+
 ---
 
 ## 4. Client-Side Data Fetching
@@ -1802,6 +1873,146 @@ function Tracker() {
 }
 ```
 
+### 5.13 Split Hooks with Independent Dependencies
+
+**Impact: MEDIUM (prevents unrelated dependency changes from recomputing or resubscribing)**
+
+Do not combine unrelated work into one hook when each piece depends on different inputs. Split `useMemo`, `useEffect`, and custom hooks by dependency group so unrelated changes do not trigger expensive recomputation or resubscription.
+
+**Incorrect: one query change recomputes totals**
+
+```tsx
+function Dashboard({ orders, query, currency }: Props) {
+  const viewModel = useMemo(() => {
+    const filtered = orders.filter(order => order.name.includes(query))
+    const totals = calculateTotals(orders, currency)
+
+    return { filtered, totals }
+  }, [orders, query, currency])
+
+  return <DashboardView data={viewModel} />
+}
+```
+
+**Correct: independent dependencies**
+
+```tsx
+function Dashboard({ orders, query, currency }: Props) {
+  const filtered = useMemo(() => {
+    return orders.filter(order => order.name.includes(query))
+  }, [orders, query])
+
+  const totals = useMemo(() => {
+    return calculateTotals(orders, currency)
+  }, [orders, currency])
+
+  return <DashboardView filtered={filtered} totals={totals} />
+}
+```
+
+This also applies to effects: one effect for the websocket subscription, another effect for document title updates, another for analytics. Each effect should represent one synchronization process.
+
+Reference: [https://react.dev/learn/lifecycle-of-reactive-effects](https://react.dev/learn/lifecycle-of-reactive-effects)
+
+### 5.14 Use useDeferredValue for Expensive Renders
+
+**Impact: MEDIUM (keeps urgent input updates responsive while expensive UI catches up)**
+
+Use `useDeferredValue` when an urgent value, such as text input, drives an expensive render. Render the input from the immediate value and render the heavy subtree from the deferred value so typing stays responsive.
+
+**Incorrect: expensive list blocks typing**
+
+```tsx
+function SearchPage({ items }: { items: Item[] }) {
+  const [query, setQuery] = useState('')
+  const results = filterItems(items, query)
+
+  return (
+    <>
+      <input value={query} onChange={event => setQuery(event.target.value)} />
+      <ExpensiveResults results={results} />
+    </>
+  )
+}
+```
+
+**Correct: heavy render uses deferred value**
+
+```tsx
+import { useDeferredValue, useMemo, useState } from 'react'
+
+function SearchPage({ items }: { items: Item[] }) {
+  const [query, setQuery] = useState('')
+  const deferredQuery = useDeferredValue(query)
+  const isStale = query !== deferredQuery
+
+  const results = useMemo(() => {
+    return filterItems(items, deferredQuery)
+  }, [items, deferredQuery])
+
+  return (
+    <>
+      <input value={query} onChange={event => setQuery(event.target.value)} />
+      <div style={{ opacity: isStale ? 0.6 : 1 }}>
+        <ExpensiveResults results={results} />
+      </div>
+    </>
+  )
+}
+```
+
+Use this for rendering responsiveness, not as a replacement for network debouncing. For server queries or API calls, still debounce, cache, or cancel requests as appropriate.
+
+Reference: [https://react.dev/reference/react/useDeferredValue](https://react.dev/reference/react/useDeferredValue)
+
+### 5.15 Do Not Define Components Inside Components
+
+**Impact: MEDIUM (avoids remounts, state loss, and broken memoization)**
+
+Component functions defined inside another component get a new identity on every render. React treats them as different component types, which can remount children, reset state, and defeat memoization.
+
+**Incorrect: Row is recreated every render**
+
+```tsx
+function UserTable({ users }: { users: User[] }) {
+  function Row({ user }: { user: User }) {
+    const [expanded, setExpanded] = useState(false)
+
+    return (
+      <tr onClick={() => setExpanded(value => !value)}>
+        <td>{user.name}</td>
+        <td>{expanded ? user.email : null}</td>
+      </tr>
+    )
+  }
+
+  return <table>{users.map(user => <Row key={user.id} user={user} />)}</table>
+}
+```
+
+**Correct: stable component identity**
+
+```tsx
+function UserRow({ user }: { user: User }) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <tr onClick={() => setExpanded(value => !value)}>
+      <td>{user.name}</td>
+      <td>{expanded ? user.email : null}</td>
+    </tr>
+  )
+}
+
+function UserTable({ users }: { users: User[] }) {
+  return <table>{users.map(user => <UserRow key={user.id} user={user} />)}</table>
+}
+```
+
+If the inner component needs parent values, pass them as props. If it is just a small render fragment with no hooks or component identity needs, use a local helper function that returns JSX instead of a component.
+
+Reference: [https://react.dev/learn/preserving-and-resetting-state](https://react.dev/learn/preserving-and-resetting-state)
+
 ---
 
 ## 6. Rendering Performance
@@ -2188,6 +2399,89 @@ function SearchResults() {
 - **Interrupt handling**: New transitions automatically cancel pending ones
 
 Reference: [https://react.dev/reference/react/useTransition](https://react.dev/reference/react/useTransition)
+
+### 6.10 Use Resource Hints for Critical Assets
+
+**Impact: MEDIUM (improves perceived performance by starting critical downloads earlier)**
+
+Use resource hints for assets and origins that are needed soon but cannot be discovered early enough by the browser. In React, prefer React DOM resource hint APIs where supported; in Next.js, prefer framework primitives such as `next/font`, `next/image`, and metadata when they cover the case.
+
+**Incorrect: browser discovers external origin late**
+
+```tsx
+function ProductHero() {
+  return <img src="https://cdn.example.com/products/hero.webp" alt="" />
+}
+```
+
+**Correct: preconnect and preload intentional critical resources**
+
+```tsx
+import { preconnect, preload } from 'react-dom'
+
+function ProductHero() {
+  preconnect('https://cdn.example.com')
+  preload('https://cdn.example.com/products/hero.webp', {
+    as: 'image',
+    fetchPriority: 'high',
+  })
+
+  return <img src="https://cdn.example.com/products/hero.webp" alt="" />
+}
+```
+
+Use resource hints sparingly. Preloading too many assets competes with truly critical work and can make performance worse.
+
+Reference: [https://react.dev/reference/react-dom/preload](https://react.dev/reference/react-dom/preload)
+
+### 6.11 Use defer or async on Script Tags
+
+**Impact: MEDIUM (prevents scripts from blocking HTML parsing and rendering)**
+
+Plain `<script src="...">` blocks HTML parsing while the browser downloads and executes the script. Use `defer` for scripts that need DOM order after parsing, `async` for independent scripts, or `next/script` strategies in Next.js.
+
+**Incorrect: parser-blocking script**
+
+```tsx
+export function DocumentHead() {
+  return <script src="https://example.com/widget.js" />
+}
+```
+
+**Correct for ordered scripts**
+
+```tsx
+export function DocumentHead() {
+  return <script src="https://example.com/widget.js" defer />
+}
+```
+
+**Correct for independent scripts**
+
+```tsx
+export function AnalyticsScript() {
+  return <script src="https://analytics.example.com/sdk.js" async />
+}
+```
+
+**Correct in Next.js**
+
+```tsx
+import Script from 'next/script'
+
+export function AnalyticsScript() {
+  return (
+    <Script
+      src="https://analytics.example.com/sdk.js"
+      strategy="afterInteractive"
+    />
+  )
+}
+```
+
+Do not use `async` for scripts that depend on execution order. For analytics, logging, chat widgets, and other non-critical third-party code, prefer delayed loading patterns from `bundle-defer-third-party`.
+
+Reference: [https://nextjs.org/docs/app/api-reference/components/script](https://nextjs.org/docs/app/api-reference/components/script)
 
 ---
 
@@ -2803,6 +3097,43 @@ const sorted = [...items].sort((a, b) => a.value - b.value)
 - `.toSpliced()` - immutable splice
 
 - `.with()` - immutable element replacement
+
+### 7.13 Use flatMap to Map and Filter in One Pass
+
+**Impact: LOW-MEDIUM (reduces intermediate arrays in hot paths)**
+
+When code maps values and then filters out empty results, `flatMap()` can combine both operations into one pass and avoid an intermediate array. Use this only when the `flatMap()` version stays readable; for complex logic, a plain loop is often clearer.
+
+**Incorrect: two passes and intermediate array**
+
+```typescript
+const visibleLinks = items
+  .map(item => item.url ? { href: item.url, label: item.title } : null)
+  .filter((link): link is Link => link !== null)
+```
+
+**Correct: one pass**
+
+```typescript
+const visibleLinks = items.flatMap(item => {
+  if (!item.url) return []
+
+  return [{ href: item.url, label: item.title }]
+})
+```
+
+**Alternative for hot paths with more logic**
+
+```typescript
+const visibleLinks: Link[] = []
+
+for (const item of items) {
+  if (!item.url) continue
+  visibleLinks.push({ href: item.url, label: item.title })
+}
+```
+
+Do not replace simple, readable code unless this path is hot or the intermediate arrays are large.
 
 ---
 
